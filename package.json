@@ -1,0 +1,14 @@
+{
+  "author": "Christian Land",
+  "version": "1.0.0",
+  "main": "./main.js",
+  "scripts": {
+    "dev": "node main.js"
+  },
+  "type": "module",
+  "directories": {
+    "workflow": "./workflow",
+    "logs": "./logs"
+  },
+  "license": "MIT"
+}
