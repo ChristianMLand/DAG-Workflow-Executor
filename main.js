@@ -32,16 +32,16 @@ async function parsePokeData(poke, species) {
 const workflow = new Workflow({ maxConcurrent: 5 });
 const logger = new Logger({ level: "debug" });
 let active = 0;
-workflow.taskManager.onAfter("start", (task) => {
-    logger.info(`Starting task: ${task.id}, concurrent: ${++active}`);
+workflow.taskManager.onAfter("start", (ctx) => {
+    logger.info(`Starting task: ${ctx.id}, concurrent: ${++active}`);
 });
 
-workflow.taskManager.onAfter("succeed", (task) => {
-    logger.info(`Finished task: ${task.id}, concurrent: ${--active}`);
+workflow.taskManager.onAfter("succeed", (ctx) => {
+    logger.info(`Finished task: ${ctx.id}, concurrent: ${--active}`);
 });
 
-workflow.taskManager.onAfter("fail", (task) => {
-    logger.error(`Failed task: ${task.id}, concurrent: ${--active}`);
+workflow.taskManager.onAfter("fail", (ctx) => {
+    logger.error(`Failed task: ${ctx.id}, concurrent: ${--active}`);
 });
 
 workflow.taskManager.onAfter("retry", (task) => {
@@ -62,7 +62,7 @@ function failUntil(count) {
     }
 }
 
-// workflow.add(failUntil(5), { retryLimit: 1, priority: 100 })
+workflow.add(failUntil(5), { retryLimit: 1, priority: 100 })
 
 workflow.add(() => fetchPokemonBatch(numPoke), { id: "fetchBatch" })
 
@@ -75,7 +75,7 @@ for (let i = 0; i < numPoke; i++) {
 // can either consume through a for await loop, or with Array.fromAsync
 
 for await(const task of workflow.stream()) {
-    logger.debug("Result:", task.result);
+    logger.debug("Result:", task.result ?? task.error.toString());
 }
 
 // Array.fromAsync(workflow.try())

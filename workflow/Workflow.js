@@ -40,11 +40,11 @@ export class Workflow {
     get size() { return this.#dag.size }
     get active() { return this.#semaphore.active }
 
-    on(event, cb) { this.#fsm.on(event, cb) }
-    onEnter(state, cb) { this.#fsm.onEnter(state, cb) }
-    onLeave(state, cb) { this.#fsm.onLeave(state, cb) }
-    onBefore(transition, cb) { this.#fsm.onBefore(transition, cb) }
-    onAfter(transition, cb) { this.#fsm.onAfter(transition, cb) }
+    on(event, cb, signal) { this.#fsm.on(event, cb, signal) }
+    onEnter(state, cb, signal) { this.#fsm.onEnter(state, cb, signal) }
+    onLeave(state, cb, signal) { this.#fsm.onLeave(state, cb, signal) }
+    onBefore(transition, cb, signal) { this.#fsm.onBefore(transition, cb, signal) }
+    onAfter(transition, cb, signal) { this.#fsm.onAfter(transition, cb, signal) }
     clear(event) { this.#fsm.clear(event); }
     pause() {
         if (this.isPaused) return;

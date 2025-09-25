@@ -66,7 +66,7 @@ export class Logger {
     error(...args) { this.log(LogLevel.ERROR, ...args) }
     close() { !!this.#fileStream && this.#fileStream.end(); }
 
-    log(level, msg, ctx) {
+    log(level, msg, ...ctx) {
         if (level < this.#level) return;
         this.#clearProgress();
 
@@ -74,12 +74,12 @@ export class Logger {
             styles.ts`${Time.stamp} ` +
             styles[level]`[${LogLevel.asString(level)}]` +
             (this.#prefix ? " " + styles.ctx`${this.#prefix}` : "");
-        console.log(line, msg, ctx ? styles.ctx`${JSON.stringify(ctx, null, 2)}` : "");
+        console.log(line, msg, ...ctx.map(c => styles.ctx`${JSON.stringify(c, null, 2)}`));
         this.#renderProgress();
 
         if (this.#fileStream) {
             const raw = `[${Time.stamp}] [${LogLevel.asString(level)}] ${this.#prefix}${msg}`;
-            this.#fileStream.write(raw + (ctx ? " " + JSON.stringify(ctx) : "") + "\n");
+            this.#fileStream.write(raw + (ctx?.length ? " " + JSON.stringify(ctx) : "") + "\n");
         }
     }
 
