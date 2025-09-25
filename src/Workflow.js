@@ -7,6 +7,7 @@ export class Workflow {
     #pause;
     #semaphore;
     #id;
+    #toRemove;
 
     static stateDef = deepFreeze({
         initial: "idle",
@@ -24,6 +25,7 @@ export class Workflow {
         this.#dag = new DAG();
         this.#processed = new Map();
         this.#pause = null;
+        this.#toRemove = new Set();
         this.#id = config.id ?? crypto.randomUUID();
         this.#fsm = new StateMachine(Workflow.stateDef, this.#id, this);
         this.taskManager = new StateMachineManager(Task.stateDef);
@@ -32,6 +34,14 @@ export class Workflow {
         this.onLeave("paused", () => this.#pause = this.#pause.resolve());
         this.onEnter("aborted", () => {
             this.getOrdered().filter(t => t.state === "pending").forEach(t => t.cancel());
+        });
+
+        this.onBefore(["end","abort"], () => {
+            this.#toRemove.forEach(t => {
+                this.#dag.removeVertex(t);
+                this.#processed.delete(t);
+            });
+            this.#toRemove.clear();
         });
     }
 
@@ -57,8 +67,19 @@ export class Workflow {
     abort() { this.#fsm.invoke("abort") }
     getTask(id) { return this.#dag.getVertex(id)?.payload; }
     getOrdered() { return this.#dag.topoSort((a, b) => b.payload.priority - a.payload.priority) }
-    // TODO prob shouldn't allow while executing?
     flush() { this.getOrdered().forEach(task => this.remove(task.id)); }
+    remove(id) {
+        let toRemove;
+        if (this.state === "executing" || this.state === "paused") {
+            toRemove = this.getTask(id);
+            this.#toRemove.add(id);
+        } else {
+            toRemove = this.#dag.removeVertex(id)?.payload;
+            this.#processed.delete(id);
+        }
+        toRemove.remove();
+        return toRemove;
+    }
 
     async checkPause() {
         const pause = this.#pause;
@@ -72,32 +93,15 @@ export class Workflow {
         return task;
     }
 
-    // TODO probably shouldn't allow removal while executing?
-    // should it throw an error?
-    // or, DO allow removal, but simply flag the task as removed,
-    // and only actually remove it once the workflow has finished?
-    remove(id) {
-        const toRemove = this.#dag.removeVertex(id).payload;
-        toRemove.remove();
-        this.#processed.delete(id);
-        return toRemove;
-    }
-
     async #process() {
         this.#fsm.invoke("begin");
-        while (true) {
-            if (this.state === "aborted") break;
-            await this.checkPause();
-            for (const task of this.getOrdered()) {
-                if (!this.#processed.has(task.id))
-                    this.#run(task.id);
-            }
-            await Promise.allSettled(this.#processed.values());
-            if (this.state === "aborted") break;
-            this.#fsm.invoke("end");
-            return this.getOrdered();
+        if (this.state === "aborted") return;
+        await this.checkPause();
+        for (const task of this.getOrdered()) {
+            if (!this.#processed.has(task.id))
+                this.#run(task.id);
         }
-        return null;
+        await Promise.allSettled(this.#processed.values());
     }
 
     async #run(id) {
@@ -108,10 +112,11 @@ export class Workflow {
             throw new Error(`Unknown task id: ${id}`);
         const p = this.#semaphore.withLock(async () => {
             const settled = await Promise.allSettled(task.reliesOn.map(did => this.#run(did)));
-            if (settled.some(s => s.status === 'rejected'))
+            if (settled.some(s => Error.isError(s.value) || s.status === 'rejected'))
                 task.cancel();
             return task.execute(settled.map(s => s.value))
-        }).catch(err => err);
+        })
+        .catch(err => err); // have to keep this to prevent error from escaping control flow
         this.#processed.set(id, p);
         return p;
     }
@@ -120,7 +125,7 @@ export class Workflow {
         filters = {
             states: ["succeeded"],
             onlyTerminal: true,
-            where: t => t,
+            where: t => !!t,
             ...filters
         }
         for await (const task of this) {
@@ -146,17 +151,27 @@ export class Workflow {
     }
 
     async *[Symbol.asyncIterator]() {
-        const ordered = this.getOrdered();
-        const stream = this.taskManager.stream(["succeeded.enter", "cancelled.enter", "failed.enter"]);
+        if (this.state === "done" || this.state === "aborted") {
+            yield* this.getOrdered(); // if already processed just yield results
+            return;
+        }
+        const stream = this.taskManager.stream(["succeeded.enter", "cancelled.enter", "failed.enter", "removed.enter"]);
         if (this.state === "idle")
             this.#process();
+        let ordered;
         let count = 0;
-        for await (const ctx of stream.values({ preventCancel: true })) {
-            if (ctx.to === "failed" && ctx.payload.attempts < ctx.payload.retryLimit) continue;
-            yield ctx.payload;
-            if (++count === ordered.length) break;
+        while (true) {
+            ordered = this.getOrdered();
+            if (count >= ordered.length) break;
+            for await (const ctx of stream.values({ preventCancel: true })) {
+                if (ctx.to === "failed" && ctx.payload.attempts < ctx.payload.retryLimit) continue;
+                yield ctx.payload;
+                if (++count >= ordered.length) break;
+            }
         }
-        stream.cancel(); // should auto cancel, but just in case
+        stream.cancel();
+        if (this.state === "aborted") return;
+        this.#fsm.invoke("end");
     }
 
     [Symbol.for("nodejs.util.inspect.custom")]() { return this.toString() }

@@ -1,4 +1,4 @@
-import { Workflow, Logger, LogLevel, Time } from "./workflow/index.js"; // assuming your code is in workflow.js
+import { Workflow, Logger, LogLevel, Time } from "./src/index.js"; // assuming your code is in workflow.js
 
 const controller = new AbortController();
 
@@ -31,17 +31,16 @@ async function parsePokeData(poke, species) {
 
 const workflow = new Workflow({ maxConcurrent: 5 });
 const logger = new Logger({ level: "debug" });
-let active = 0;
 workflow.taskManager.onAfter("start", (ctx) => {
-    logger.info(`Starting task: ${ctx.id}, concurrent: ${++active}`);
+    logger.info(`Starting task: ${ctx.id}`);
 });
 
 workflow.taskManager.onAfter("succeed", (ctx) => {
-    logger.info(`Finished task: ${ctx.id}, concurrent: ${--active}`);
+    logger.info(`Finished task: ${ctx.id}`);
 });
 
 workflow.taskManager.onAfter("fail", (ctx) => {
-    logger.error(`Failed task: ${ctx.id}, concurrent: ${--active}`);
+    logger.error(`Failed task: ${ctx.id}`);
 });
 
 workflow.taskManager.onAfter("retry", (task) => {
@@ -58,11 +57,11 @@ function failUntil(count) {
         await Time.wait(50);
         if (attempts++ < count) 
             throw new Error("FAILED");
-        return "HELLO WORLD";
+        return fetchPokemonBatch(numPoke);
     }
 }
 
-workflow.add(failUntil(5), { retryLimit: 1, priority: 100 })
+// workflow.add(failUntil(3), { id: "fetchBatch", retryLimit: 1, priority: 100 })
 
 workflow.add(() => fetchPokemonBatch(numPoke), { id: "fetchBatch" })
 
@@ -72,12 +71,13 @@ for (let i = 0; i < numPoke; i++) {
     workflow.add((poke, species) => parsePokeData(poke, species), { id: `parsePoke-${i}`, reliesOn: [`fetchName-${i}`, `fetchSpecies-${i}`]})
 }
 
-// can either consume through a for await loop, or with Array.fromAsync
-
-for await(const task of workflow.stream()) {
-    logger.debug("Result:", task.result ?? task.error.toString());
+// can either consume through a for await loop...
+for await(const task of workflow.stream({ states: ["*"]})) {
+    logger.debug("Result:", task);
 }
+// ...or with Array.fromAsync
+await Array.fromAsync(workflow.try())
+    .then(res => res.forEach(t => logger.debug("Result:", t)))
+    .catch(err => logger.error(err.toString()))
 
-// Array.fromAsync(workflow.try())
-//     .then(res => res.forEach(t => logger.debug("Result:", t)))
-//     .catch(err => logger.error(err.toString()))
+logger.debug("HELLO WORLD");

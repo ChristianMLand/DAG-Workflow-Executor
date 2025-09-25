@@ -27,7 +27,10 @@ export class StateMachineManager {
     }
     get allStates() { return Array.from(this.#states) }
     get allTransitions() { return Array.from(this.#transitions) }
-    unregister(id) { this.#idMap.delete(id); }
+    unregister(id) { 
+        // TODO should I manually clean up all listeners first??
+        this.#idMap.delete(id);
+    }
     get(id) { return this.#idMap.get(id); }
     has(id) { return this.#idMap.has(id); }
     register(id, instance) {

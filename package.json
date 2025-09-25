@@ -7,7 +7,7 @@
   },
   "type": "module",
   "directories": {
-    "workflow": "./workflow",
+    "src": "./src",
     "logs": "./logs"
   },
   "license": "MIT"

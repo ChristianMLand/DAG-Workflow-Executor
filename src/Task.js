@@ -37,6 +37,7 @@ export class Task {
         this.#retryLimit = config.retryLimit ?? 0;
         this.#timeout = config.timeout ?? null;
         this.#backoff = config.backoff ?? 200;
+        this.#attempts = 0;
         this.#fsm = workflow.taskManager.register(this.#id, this);
         this.#fsm.invoke("add");
         this.onAfter("start", () => this.#error = undefined);
@@ -90,18 +91,15 @@ export class Task {
                 return await this.#attempt(depResults);
             } catch (error) {
                 this.#error = error;
-                if (this.state !== "failed") {
+                if (this.state !== "failed")
                     this.#fsm.invoke("fail");
-                }
                 if (this.#attempts === this.#retryLimit)
-                    return this.#error;
+                    throw this.#error;
                 this.#fsm.invoke("retry");
                 await Time.wait(2 ** this.#attempts * this.#backoff);
             }
         }
     }
-
-    // TODO add support for executing subgraphs?
 
     [Symbol.for("nodejs.util.inspect.custom")]() { return this.toString() }
 

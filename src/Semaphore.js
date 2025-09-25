@@ -33,6 +33,8 @@ export class Semaphore {
         await this.acquire();
         try {
             return await fn();
+        } catch(err) {
+            throw err;
         } finally {
             this.release();
         }
