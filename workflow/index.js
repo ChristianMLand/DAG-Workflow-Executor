@@ -8,3 +8,9 @@ export { StateMachine } from './StateMachine.js';
 export { StateMachineManager } from './StateMachineManager.js';
 export { Task } from './Task.js';
 export { Workflow } from './Workflow.js';
+
+export function deepFreeze(obj) {
+    if (obj === null || typeof obj !== "object") return obj;
+    Object.keys(obj).forEach(key => deepFreeze(obj[key]));
+    return Object.freeze(obj);
+}

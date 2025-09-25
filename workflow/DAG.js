@@ -1,5 +1,7 @@
 export class DAG {
     #vertices;
+    #dirty = true;
+    #cached = [];
     constructor() {
         this.#vertices = new Map();
     }
@@ -31,6 +33,7 @@ export class DAG {
             throw new Error("Vertex ID already exists!");
         }
         this.#vertices.set(id, new DAG.Vertex(id, payload, edges));
+        this.#dirty = true;
     }
 
     *getAllEdges() {
@@ -49,6 +52,7 @@ export class DAG {
         }
         const toRemove = this.#vertices.get(id);
         this.#vertices.delete(id);
+        this.#dirty = true;
         return toRemove;
     }
 
@@ -62,6 +66,7 @@ export class DAG {
         const from = this.#vertices.get(fromId);
         if (from && this.#vertices.has(toId)) {
             from.edges.add(toId);
+            this.#dirty = true;
         }
     }
 
@@ -69,6 +74,7 @@ export class DAG {
         const from = this.#vertices.get(fromId);
         if (from) {
             from.edges.delete(toId);
+            this.#dirty = true;
         }
     }
 
@@ -89,25 +95,34 @@ export class DAG {
         yield vertex;
     }
 
-    *topoSort(comparator = null) {
+    topoSort(comparator = null) {
+        if (!this.#dirty) return this.#cached;
         const visited = new Set();
         const output = [];
         const vertices = Array.from(this.#vertices.values());
-        if (comparator) {
-            vertices.sort(comparator);
-        }
+        if (comparator) vertices.sort(comparator);
         for (const vertex of vertices) {
             if (!visited.has(vertex.id)) {
                 output.push(...this.#dfsFrom(vertex.id, visited, comparator));
             }
         }
-        yield* output.map(v => v.payload);
+        this.#cached = output.map(v => v.payload);
+        this.#dirty = false;
+        return this.#cached;
     }
 
-    getEdges(id) {
+    getEdges(id) { // dependencies
         const vertex = this.#vertices.get(id);
         if (!vertex) return;
-        return Array
-            .from(vertex.edges, connId => this.#vertices.get(connId));
+        return Array.from(vertex.edges, connId => this.#vertices.get(connId));
+    }
+
+    // maybe cache outEdges on vertices?
+    isTerminal(id) {
+        let outEdges = 0;
+        for (const v of Array.from(this.#vertices.values())) {
+            if (v.edges.has(id)) outEdges++;
+        }
+        return outEdges === 0;
     }
 }

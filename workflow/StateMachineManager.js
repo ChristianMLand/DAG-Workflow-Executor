@@ -11,9 +11,9 @@ export class StateMachineManager {
         for (const transition in stateDef.transitions) {
             this.#transitions.add(transition);
             const { from, to } = stateDef.transitions[transition];
-            if (from instanceof Array) {
+            if (Array.isArray(from)) {
                 from.forEach(state => this.#states.add(state));
-            } else {
+            } else if (from !== "*") {
                 this.#states.add(from);
             }
             this.#states.add(to);
@@ -30,57 +30,65 @@ export class StateMachineManager {
     unregister(id) { this.#idMap.delete(id); }
     get(id) { return this.#idMap.get(id); }
     has(id) { return this.#idMap.has(id); }
-    register(id) {
-        const fsm = new StateMachine(this.#stateDef, id);
+    register(id, instance) {
+        const fsm = new StateMachine(this.#stateDef, id, instance);
         this.#idMap.set(id, fsm);
         fsm.on("*", (event, ctx) => this.#signaller.emit(event, ctx));
         return fsm;
     }
 
+    stream(event) {
+        return this.#signaller.stream(event);
+    }
+    
     on(event, cb) {
-        if (event === "*") {
-            this.#signaller.on(event, cb);
-        } else if (this.#transitions.has(event)) {
-            this.onBefore(event, cb);
-        } else if (this.#states.has(event)) {
-            this.onEnter(event, cb);
-        } else {
-            throw new Error("Invalid event!");
-        }
+        this.#signaller.on(event, cb);
+    }
+    
+    off(event, cb) {
+        this.#signaller.off(event, cb);
     }
 
     onBefore(transition, cb) {
-        if (!this.#transitions.has(transition))
+        const transitions = Array.isArray(transition) ? transition : [transition];
+        if (!transitions.every(t => this.#transitions.has(t)))
             throw new Error("Invalid transition!");
-        this.#signaller.on(`${transition}.before`, cb);
+        this.on(transitions.map(t => `${t}.before`), cb);
     }
 
     onAfter(transition, cb) {
-        if (!this.#transitions.has(transition))
+        const transitions = Array.isArray(transition) ? transition : [transition];
+        if (!transitions.every(t => this.#transitions.has(t)))
             throw new Error("Invalid transition!");
-        this.#signaller.on(`${transition}.after`, cb);
+        this.on(transitions.map(t => `${t}.after`), cb);
     }
 
     onEnter(state, cb) {
-        if (!this.#states.has(state))
+        const states = Array.isArray(state) ? state : [state];
+        if (!states.every(s => this.#states.has(s)))
             throw new Error("Invalid state!");
-        this.#signaller.on(`${state}.enter`, cb);
+        this.on(states.map(s => `${s}.enter`), cb);
     }
 
     onLeave(state, cb) {
-        if (!this.#states.has(state))
+        const states = Array.isArray(state) ? state : [state];
+        if (!states.every(s => this.#states.has(s)))
             throw new Error("Invalid state!");
-        this.#signaller.on(`${state}.leave`, cb);
+        this.on(states.map(s => `${s}.leave`), cb);
     }
 
     clear(event) {
-        if (this.#transitions.has(event)) {
-            this.#signaller.clear(`${event}.before`);
-            this.#signaller.clear(`${event}.after`);
-        }
-        if (this.#states.has(event)) {
-            this.#signaller.clear(`${event}.enter`);
-            this.#signaller.clear(`${event}.leave`);
-        }
+        const events = Array.isArray(event) ? event : [event];
+        if (events.includes("*"))
+            this.#signaller.clear("*");
+        events.forEach(e => {
+            if (this.#transitions.has(e)) {
+                this.#signaller.clear(`${e}.before`);
+                this.#signaller.clear(`${e}.after`);
+            } else if (this.#states.has(e)) {
+                this.#signaller.clear(`${e}.enter`);
+                this.#signaller.clear(`${e}.leave`);
+            }
+        })
     }
 }

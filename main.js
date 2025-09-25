@@ -1,96 +1,20 @@
-import { Workflow, Logger } from "./workflow/index.js"; // assuming your code is in workflow.js
+import { Workflow, Logger, LogLevel, Time } from "./workflow/index.js"; // assuming your code is in workflow.js
 
-// const workflow = new Workflow({ maxConcurrent: 2 });
-
-// // ----- Tasks -----
-
-// workflow.add(async () => {
-//     console.log("Fetching posts...");
-//     const res = await fetch("https://jsonplaceholder.typicode.com/posts");
-//     return await res.json();
-// }, { id: "extract" });
-
-// workflow.add(async (posts) => {
-//     console.log("Transforming posts...");
-//     return posts.filter(p => p.userId === 1);
-// }, { id: "transform", reliesOn: ["extract"] });
-
-// workflow.add(async (filtered) => {
-//     console.log("Writing results to file...");
-//     await fs.writeFile("./filtered-posts.json", JSON.stringify(filtered, null, 2));
-//     return true;
-// }, { id: "load", reliesOn: ["transform"] });
-
-// workflow.add(async () => {
-//     console.log("✅ Pipeline completed successfully!");
-//     return true;
-// }, { id: "notify", reliesOn: ["load"] });
-
-// // ----- Lifecycle Hooks -----
-
-// workflow.on("start", t => console.log(`[${t.id}] started`));
-// workflow.on("succeed", t => console.log(`[${t.id}] succeeded`));
-// workflow.on("fail", t => console.error(`[${t.id}] failed:`, t.error));
-// workflow.on("done", results => console.log("Workflow finished:", results));
-
-// // ----- Run -----
-
-// console.log("Running ETL workflow...");
-// await workflow.execute();
-// console.log("All tasks settled.");
-
-// ------------------------------
-
-// const workflow = new Workflow({ maxConcurrent: 3 });
-// workflow.on("start", t => console.log(`[${t.id}] started`));
-// workflow.on("succeed", t => console.log(`[${t.id}] succeeded`));
-// workflow.on("fail", t => console.error(`[${t.id}] failed:`, t.error));
-// workflow.on("done", f => console.log("Workflow finished:", f.getOrdered().map(t => t.result)));
-
-// workflow.add(() => Time.delay(() => {
-//     console.log("Building artifacts...");
-//     return "build-output";
-// }, 500)(), { id: "build" });
-
-// workflow.add((buildOutput) => Time.delay(() => {
-//     console.log("Running tests on", buildOutput);
-//     return "tests-passed";
-// }, 800)(), { id: "tests", reliesOn: ["build"] });
-
-// workflow.add((buildOutput) => Time.delay(() => {
-//     console.log("Linting", buildOutput);
-//     return "lint-clean";
-// }, 400)(), { id: "lint", reliesOn: ["build"] });
-
-// workflow.add((buildOutput) => Time.delay(() => {
-//     console.log("Security scanning", buildOutput);
-//     return "scan-clean";
-// }, 600)(), { id: "scan", reliesOn: ["build"] });
-
-// workflow.add((tests, lint, scan) => Time.delay(() => {
-//     console.log("Deploying with:", tests, lint, scan);
-//     return "deployed!";
-// }, 500)(), { id: "deploy", reliesOn: ["tests", "lint", "scan"] });
-
-// console.log("Starting workflow...");
-// workflow.execute().then(() => {
-//     console.log("Pipeline finished");
-// });
-
+const controller = new AbortController();
 
 async function fetchPokemonBatch(count) {
-    return fetch("https://pokeapi.co/api/v2/pokemon?limit=" + count)
+    return fetch("https://pokeapi.co/api/v2/pokemon?limit=" + count, { signal: controller.signal })
         .then(res => res.json())
         .then(res => res.results);
 }
 
 async function fetchPokemon(name) {
-    return fetch("https://pokeapi.co/api/v2/pokemon/" + name)
+    return fetch("https://pokeapi.co/api/v2/pokemon/" + name, { signal: controller.signal })
         .then(res => res.json());
 }
 
 async function fetchPokemonSpecies(name) {
-    return fetch("https://pokeapi.co/api/v2/pokemon-species/" + name)
+    return fetch("https://pokeapi.co/api/v2/pokemon-species/" + name, { signal: controller.signal })
         .then(res => res.json());
 }
 
@@ -106,25 +30,39 @@ async function parsePokeData(poke, species) {
 
 
 const workflow = new Workflow({ maxConcurrent: 5 });
-const logger = new Logger();
-
-workflow.on("start", (task) => {
-    logger.info(`Starting task: ${task.id}`);
+const logger = new Logger({ level: "debug" });
+let active = 0;
+workflow.taskManager.onAfter("start", (task) => {
+    logger.info(`Starting task: ${task.id}, concurrent: ${++active}`);
 });
 
-workflow.on("succeed", (task) => {
-    logger.info(`Finished task: ${task.id}`);
+workflow.taskManager.onAfter("succeed", (task) => {
+    logger.info(`Finished task: ${task.id}, concurrent: ${--active}`);
 });
 
-workflow.on("fail", (task) => {
-    logger.error(`Failed task: ${task.id}`);
+workflow.taskManager.onAfter("fail", (task) => {
+    logger.error(`Failed task: ${task.id}, concurrent: ${--active}`);
 });
 
-workflow.on("retry", (task) => {
+workflow.taskManager.onAfter("retry", (task) => {
     logger.warn(`Retrying task: ${task.id}`);
 });
 
+workflow.onAfter("abort", () => controller.abort());
+
 const numPoke = 9;
+
+function failUntil(count) {
+    let attempts = 0;
+    return async function() {
+        await Time.wait(50);
+        if (attempts++ < count) 
+            throw new Error("FAILED");
+        return "HELLO WORLD";
+    }
+}
+
+// workflow.add(failUntil(5), { retryLimit: 1, priority: 100 })
 
 workflow.add(() => fetchPokemonBatch(numPoke), { id: "fetchBatch" })
 
@@ -134,7 +72,12 @@ for (let i = 0; i < numPoke; i++) {
     workflow.add((poke, species) => parsePokeData(poke, species), { id: `parsePoke-${i}`, reliesOn: [`fetchName-${i}`, `fetchSpecies-${i}`]})
 }
 
-workflow.process()
-    .then(res => res.filter(r => r.id.startsWith("parsePoke")))
-    .then(res => res.map(r => r.result))
-    .then(res => logger.info(res));
+// can either consume through a for await loop, or with Array.fromAsync
+
+for await(const task of workflow.stream()) {
+    logger.debug("Result:", task.result);
+}
+
+// Array.fromAsync(workflow.try())
+//     .then(res => res.forEach(t => logger.debug("Result:", t)))
+//     .catch(err => logger.error(err.toString()))

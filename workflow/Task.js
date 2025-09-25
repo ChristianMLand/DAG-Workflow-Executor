@@ -1,4 +1,4 @@
-import { StateMachineManager, Time } from "./index.js";
+import { Time, deepFreeze } from "./index.js";
 
 export class Task {
     #workflow;
@@ -7,13 +7,14 @@ export class Task {
     #reliesOn;
     #priority;
     #retryLimit;
+    #attempts;
     #result;
     #error;
     #timeout;
     #backoff;
     #fsm;
 
-    static manager = new StateMachineManager({
+    static stateDef = deepFreeze({
         initial: "created",
         transitions: {
             add: { from: "created", to: "pending" },
@@ -23,7 +24,7 @@ export class Task {
             fail: { from: "running", to: "failed" },
             timeout: { from: "running", to: "failed" },
             retry: { from: "failed", to: "pending" },
-            remove: { from: "*", to: "removed" }
+            remove: { from: "*", to: "removed" },
         }
     });
 
@@ -36,67 +37,66 @@ export class Task {
         this.#retryLimit = config.retryLimit ?? 0;
         this.#timeout = config.timeout ?? null;
         this.#backoff = config.backoff ?? 200;
-        this.#fsm = Task.manager.register(this.#id);
-        this.#fsm.do.add(this);
-        this.#fsm.on("start", () => this.#error = undefined);
-        this.#fsm.on("cancel", () => this.#error = new Error("Task was cancelled!"));
-        this.#fsm.onAfter("remove", () => Task.manager.unregister(this.id));
+        this.#fsm = workflow.taskManager.register(this.#id, this);
+        this.#fsm.invoke("add");
+        this.onAfter("start", () => this.#error = undefined);
+        this.onAfter("cancel", () => this.#error = new Error("Task was cancelled!"));
+        this.onAfter("remove", () => workflow.taskManager.unregister(this.id));
     }
 
     get id() { return this.#id; }
     get reliesOn() { return Array.from(this.#reliesOn); }
     get priority() { return this.#priority; }
     get retryLimit() { return this.#retryLimit; }
+    get attempts() { return this.#attempts; }
     get timeout() { return this.#timeout; }
     get backoff() { return this.#backoff; }
     get result() { return this.#result; }
     get error() { return this.#error; }
     get state() { return this.#fsm.state; }
 
-    on(event, cb) { this.#fsm.on(event, cb); }
     clear(event) { this.#fsm.clear(event); }
-    cancel() { this.#fsm.do.cancel(this); }
-    remove() { this.#fsm.do.remove(this); }
+    cancel() { this.#fsm.invoke("cancel"); }
+    remove() { this.#fsm.invoke("remove"); }
+    on(event, cb) { this.#fsm.on(event, cb) }
+    onEnter(state, cb) { this.#fsm.onEnter(state, cb) }
+    onLeave(state, cb) { this.#fsm.onLeave(state, cb) }
+    onBefore(transition, cb) { this.#fsm.onBefore(transition, cb) }
+    onAfter(transition, cb) { this.#fsm.onAfter(transition, cb) }
 
     async #attempt(depResults) {
         await this.#workflow.checkPause();
         if (this.state === "removed")
             throw new Error(`Task ${this.id} was removed before execution`);
-        this.#fsm.do.start(this);
+        this.#fsm.invoke("start");
         let work = this.#work(...depResults);
         if (this.#timeout != null) {
             const timeout = Time.delay(() => {
-                this.#fsm.do.timeout(this);
+                this.#fsm.invoke("timeout");
                 throw new Error(`Task ${this.id} timed out after ${this.#timeout}ms`);
             }, this.#timeout)
             work = Promise.race([work, timeout()]);
         }
         this.#result = await work;
-        this.#fsm.do.succeed(this);
+        this.#fsm.invoke("succeed");
         return this.#result;
     }
 
-    async execute() {
-        const settled = await Promise.allSettled(
-            this.reliesOn.map(did => this.#workflow.run(did))
-        );
-        if (settled.some(s => s.status === 'rejected'))
-            this.cancel();
+    async execute(depResults) {
         if (this.state === "cancelled")
             throw this.#error;
-        const depResults = settled.map(s => s.value);
-        for (let attempts = 0; attempts <= this.#retryLimit; attempts++) {
+        for (this.#attempts = 0; this.#attempts <= this.#retryLimit; this.#attempts++) {
             try {
                 return await this.#attempt(depResults);
             } catch (error) {
                 this.#error = error;
                 if (this.state !== "failed") {
-                    this.#fsm.do.fail(this);
+                    this.#fsm.invoke("fail");
                 }
-                if (attempts === this.#retryLimit)
-                    throw this.#error;
-                this.#fsm.do.retry(this);
-                await Time.wait(2 ** attempts * this.#backoff);
+                if (this.#attempts === this.#retryLimit)
+                    return this.#error;
+                this.#fsm.invoke("retry");
+                await Time.wait(2 ** this.#attempts * this.#backoff);
             }
         }
     }
@@ -110,7 +110,7 @@ export class Task {
             id: this.id,
             state: this.state,
             result: this.result,
-            error: this.error,
+            error: this.error?.toString(),
             reliesOn: this.reliesOn,
             priority: this.priority,
             timeout: this.timeout,
