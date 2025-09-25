@@ -59,7 +59,9 @@ export class Signaller {
     clear(event) {
         const events = Array.isArray(event) ? event : [event];
         this.#wc.clear();
-        if (events.every(e => this.#events.has(e)))
+        if (events.includes("*"))
+            this.#events.forEach(e => this.#handlers[e].clear());
+        else if (events.every(e => this.#events.has(e)))
             events.forEach(e => this.#handlers[e].clear());
     }
 
