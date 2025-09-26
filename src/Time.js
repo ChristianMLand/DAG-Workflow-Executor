@@ -10,7 +10,7 @@ export class Time {
     static seconds(amt) {
         return amt * 1000;
     }
-    
+
     /**
      * Converts minutes to milliseconds.
      * @param {number} amt - Number of minutes
@@ -19,7 +19,7 @@ export class Time {
     static minutes(amt) {
         return amt * 1000 * 60
     }
-    
+
     /**
      * Waits/sleeps for a specified amount of time.
      * @param {number} ms - Number of milliseconds to wait
@@ -31,7 +31,7 @@ export class Time {
         let handle;
         await new Promise(res => handle = setTimeout(res, ms)).finally(() => clearTimeout(handle));
     }
-    
+
     /**
      * Waits forever (never resolves).
      * @returns {Promise<never>} Promise that never resolves
@@ -65,22 +65,34 @@ export class Time {
             check = null;
         })
     }
-    
+
     /**
      * Executes a callback with a timeout.
-     * @param {function(): Promise<any>} cb - Callback function to execute
+     * @param {Promise<any>} prom - Promise to timeout
      * @param {number} [ms=5000] - Timeout in milliseconds
+     * @param {function(): void} - Callback to execute after timeout
      * @returns {Promise<any>} The result of the callback or timeout error
      */
-    static async timeout(cb, ms = 5000) {
-        let timeout;
+    static async timeout(prom, ms = 5000, onTimeout) {
         if (ms === Number.POSITIVE_INFINITY)
-            timeout = this.forever.bind(this);
-        else
-            timeout = Time.delay(() => { throw new Error(`Timed out after ${ms}ms`) }, ms);
-        return Promise.race([cb(), timeout()]);
+            return prom;
+        let timer;
+        const timeoutPromise = new Promise((_, reject) => {
+            timer = setTimeout(() => {
+                if (onTimeout) onTimeout();
+                reject(new Error(`Timed out after ${ms}ms`));
+            }, ms);
+        });
+
+        try {
+            return await Promise.race([prom, timeoutPromise]);
+        } finally {
+            if (timer) 
+                clearTimeout(timer);
+        }
     }
-    
+
+
     /**
      * Delays execution of a callback by a specified amount of time.
      * @param {function} cb - Callback function to delay
@@ -93,7 +105,7 @@ export class Time {
             return cb(...args);
         }
     }
-    
+
     /**
      * Gets the current timestamp as an ISO string.
      * @returns {string} Current timestamp in ISO format

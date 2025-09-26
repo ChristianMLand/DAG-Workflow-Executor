@@ -220,13 +220,8 @@ export class Task {
             throw new Error(`Task ${this.id} was removed before execution`);
         this.#fsm.invoke("start");
         let work = this.#work(...depResults);
-        if (this.#timeout != null) {
-            const timeout = Time.delay(() => {
-                this.#fsm.invoke("timeout");
-                throw new Error(`Task ${this.id} timed out after ${this.#timeout}ms`);
-            }, this.#timeout)
-            work = Promise.race([work, timeout()]);
-        }
+        if (this.#timeout != null)
+            work = Time.timeout(work, this.#timeout, () => this.#fsm.invoke("timeout"));
         this.#result = await work;
         this.#fsm.invoke("succeed");
         return this.#result;
