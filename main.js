@@ -1,4 +1,4 @@
-import { Workflow, Logger, LogLevel, Time } from "./src/index.js"; // assuming your code is in workflow.js
+import { Workflow, Logger } from "./src/index.js";
 
 const controller = new AbortController();
 
@@ -32,19 +32,19 @@ async function parsePokeData(poke, species) {
 const workflow = new Workflow({ maxConcurrent: 5 });
 const logger = new Logger({ level: "debug" });
 workflow.taskManager.onAfter("start", (ctx) => {
-    logger.info(`Starting task: ${ctx.id}`);
+    logger.debug("Starting task:", ctx.id);
 });
 
 workflow.taskManager.onAfter("succeed", (ctx) => {
-    logger.info(`Finished task: ${ctx.id}`);
+    logger.debug("Finished task:", ctx.id);
 });
 
 workflow.taskManager.onAfter("fail", (ctx) => {
-    logger.error(`Failed task: ${ctx.id}`);
+    logger.error("Failed task:", ctx.id);
 });
 
-workflow.taskManager.onAfter("retry", (task) => {
-    logger.warn(`Retrying task: ${task.id}`);
+workflow.taskManager.onAfter("retry", (ctx) => {
+    logger.warn("Retrying task:", ctx.id);
 });
 
 workflow.onAfter("abort", () => controller.abort());
@@ -72,12 +72,10 @@ for (let i = 0; i < numPoke; i++) {
 }
 
 // can either consume through a for await loop...
-for await(const task of workflow.stream({ states: ["*"]})) {
-    logger.debug("Result:", task);
+for await(const task of workflow.stream()) {
+    logger.info("Result:", task.result ?? task.error?.toString());
 }
 // ...or with Array.fromAsync
 await Array.fromAsync(workflow.try())
-    .then(res => res.forEach(t => logger.debug("Result:", t)))
-    .catch(err => logger.error(err.toString()))
-
-logger.debug("HELLO WORLD");
+    .then(res => res.forEach(t => logger.info("Result:", t)))
+    .catch(err => logger.error(err.toString()));
