@@ -1,4 +1,4 @@
-import { Workflow, Logger } from "./src/index.js";
+import { Workflow, Logger, Time } from "./src/index.js";
 
 const controller = new AbortController();
 
@@ -31,6 +31,7 @@ async function parsePokeData(poke, species) {
 
 const workflow = new Workflow({ maxConcurrent: 5 });
 const logger = new Logger({ level: "debug" });
+
 workflow.taskManager.onAfter("start", (ctx) => {
     logger.debug("Starting task:", ctx.id);
 });
@@ -39,13 +40,19 @@ workflow.taskManager.onAfter("succeed", (ctx) => {
     logger.debug("Finished task:", ctx.id);
 });
 
-workflow.taskManager.onAfter("fail", (ctx) => {
-    logger.error("Failed task:", ctx.id);
+workflow.taskManager.onEnter("failed", (ctx) => {
+    logger.error(`Failed task ${ctx.id}, attempt (${ctx.payload.attempts+1}/${ctx.payload.retryLimit+1})`);
 });
 
 workflow.taskManager.onAfter("retry", (ctx) => {
-    logger.warn("Retrying task:", ctx.id);
+    const delay = 2 ** ctx.payload.attempts * ctx.payload.backoff
+    logger.warn(`Retrying task ${ctx.id} in ${delay}ms...:`);
 });
+
+
+workflow.taskManager.onBefore("timeout", (ctx) => {
+    logger.warn(`Timed out task ${ctx.id} after ${ctx.payload.timeout}ms`);
+})
 
 workflow.onAfter("abort", () => controller.abort());
 
@@ -54,16 +61,17 @@ const numPoke = 9;
 function failUntil(count) {
     let attempts = 0;
     return async function() {
-        await Time.wait(50);
-        if (attempts++ < count) 
+        if (attempts++ < count) {
+            await Time.wait(300);
             throw new Error("FAILED");
-        return fetchPokemonBatch(numPoke);
+        }
+        return fetchPokemonBatch(numPoke)
     }
 }
 
-// workflow.add(failUntil(3), { id: "fetchBatch", retryLimit: 1, priority: 100 })
+workflow.add(failUntil(5), { id: "fetchBatch", retryLimit: 5, timeout: 300, priority: 100 })
 
-workflow.add(() => fetchPokemonBatch(numPoke), { id: "fetchBatch" })
+// workflow.add(() => fetchPokemonBatch(numPoke), { id: "fetchBatch" })
 
 for (let i = 0; i < numPoke; i++) {
     workflow.add((res) => fetchPokemon(res[i].name), { id: `fetchName-${i}`, reliesOn: ["fetchBatch"] });
@@ -75,7 +83,8 @@ for (let i = 0; i < numPoke; i++) {
 for await(const task of workflow.stream()) {
     logger.info("Result:", task.result ?? task.error?.toString());
 }
+
 // ...or with Array.fromAsync
-await Array.fromAsync(workflow.try())
-    .then(res => res.forEach(t => logger.info("Result:", t)))
-    .catch(err => logger.error(err.toString()));
+// await Array.fromAsync(workflow.try())
+//     .then(res => res.forEach(t => logger.info("Result:", t)))
+//     .catch(err => logger.error(err.toString()));

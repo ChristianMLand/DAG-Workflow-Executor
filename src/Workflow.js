@@ -86,55 +86,55 @@ export class Task {
      * @returns {string} The task ID
      */
     get id() { return this.#id; }
-    
+
     /**
      * Gets the array of task IDs this task depends on.
      * @returns {string[]} Array of dependency task IDs
      */
     get reliesOn() { return Array.from(this.#reliesOn); }
-    
+
     /**
      * Gets the task priority.
      * @returns {number} The priority value
      */
     get priority() { return this.#priority; }
-    
+
     /**
      * Gets the retry limit for this task.
      * @returns {number} The maximum number of retry attempts
      */
     get retryLimit() { return this.#retryLimit; }
-    
+
     /**
      * Gets the current number of attempts made.
      * @returns {number} The number of attempts
      */
     get attempts() { return this.#attempts; }
-    
+
     /**
      * Gets the timeout value for this task.
      * @returns {number|null} The timeout in milliseconds or null
      */
     get timeout() { return this.#timeout; }
-    
+
     /**
      * Gets the backoff time for retries.
      * @returns {number} The backoff time in milliseconds
      */
     get backoff() { return this.#backoff; }
-    
+
     /**
      * Gets the result of the task execution.
      * @returns {any} The task result
      */
     get result() { return this.#result; }
-    
+
     /**
      * Gets the error that occurred during execution.
      * @returns {Error|undefined} The error or undefined
      */
     get error() { return this.#error; }
-    
+
     /**
      * Gets the current state of the task.
      * @returns {string} The current state
@@ -146,17 +146,17 @@ export class Task {
      * @param {string|string[]} event - Event name(s) to clear
      */
     clear(event) { this.#fsm.clear(event); }
-    
+
     /**
      * Cancels the task.
      */
     cancel() { this.#fsm.invoke("cancel"); }
-    
+
     /**
      * Removes the task from the workflow.
      */
     remove() { this.#fsm.invoke("remove"); }
-    
+
     /**
      * Registers an event listener for task state changes.
      * @param {string|string[]} event - Event name(s) to listen for
@@ -166,7 +166,7 @@ export class Task {
      * @returns {function} Cleanup function to remove the listener(s)
      */
     on(event, cb, signal) { return this.#fsm.on(event, cb, signal) }
-    
+
     /**
      * Registers a listener for state entry events.
      * @param {string|string[]} state - State name(s) to listen for
@@ -176,7 +176,7 @@ export class Task {
      * @returns {function} Cleanup function to remove the listener(s)
      */
     onEnter(state, cb, signal) { return this.#fsm.onEnter(state, cb, signal) }
-    
+
     /**
      * Registers a listener for state exit events.
      * @param {string|string[]} state - State name(s) to listen for
@@ -186,7 +186,7 @@ export class Task {
      * @returns {function} Cleanup function to remove the listener(s)
      */
     onLeave(state, cb, signal) { return this.#fsm.onLeave(state, cb, signal) }
-    
+
     /**
      * Registers a listener for transition before events.
      * @param {string|string[]} transition - Transition name(s) to listen for
@@ -196,7 +196,7 @@ export class Task {
      * @returns {function} Cleanup function to remove the listener(s)
      */
     onBefore(transition, cb, signal) { return this.#fsm.onBefore(transition, cb, signal) }
-    
+
     /**
      * Registers a listener for transition after events.
      * @param {string|string[]} transition - Transition name(s) to listen for
@@ -324,7 +324,7 @@ export class Workflow {
             "abort": { from: ["executing", "paused"], to: "aborted" }
         }
     });
-    
+
     /**
      * Creates a new workflow instance.
      * @param {Object} [config={}] - Configuration options
@@ -348,7 +348,7 @@ export class Workflow {
             this.getOrdered().filter(t => t.state === "pending").forEach(t => t.cancel());
         });
 
-        this.onBefore(["end","abort"], () => {
+        this.onBefore(["end", "abort"], () => {
             this.#toRemove.forEach(t => {
                 this.#dag.removeVertex(t);
                 this.#processed.delete(t);
@@ -368,19 +368,19 @@ export class Workflow {
      * @returns {string} The current state
      */
     get state() { return this.#fsm.state }
-    
+
     /**
      * Checks if the workflow is currently paused.
      * @returns {boolean} True if paused, false otherwise
      */
     get isPaused() { return this.state === "paused"; }
-    
+
     /**
      * Gets the number of tasks in the workflow.
      * @returns {number} The number of tasks
      */
     get size() { return this.#dag.size }
-    
+
     /**
      * Gets the number of currently active tasks.
      * @returns {number} The number of active tasks
@@ -396,7 +396,7 @@ export class Workflow {
      * @returns {function} Cleanup function to remove the listener(s)
      */
     on(event, cb, signal) { return this.#fsm.on(event, cb, signal) }
-    
+
     /**
      * Registers a listener for state entry events.
      * @param {string|string[]} state - State name(s) to listen for
@@ -406,7 +406,7 @@ export class Workflow {
      * @returns {function} Cleanup function to remove the listener(s)
      */
     onEnter(state, cb, signal) { return this.#fsm.onEnter(state, cb, signal) }
-    
+
     /**
      * Registers a listener for state exit events.
      * @param {string|string[]} state - State name(s) to listen for
@@ -416,7 +416,7 @@ export class Workflow {
      * @returns {function} Cleanup function to remove the listener(s)
      */
     onLeave(state, cb, signal) { return this.#fsm.onLeave(state, cb, signal) }
-    
+
     /**
      * Registers a listener for transition before events.
      * @param {string|string[]} transition - Transition name(s) to listen for
@@ -426,7 +426,7 @@ export class Workflow {
      * @returns {function} Cleanup function to remove the listener(s)
      */
     onBefore(transition, cb, signal) { return this.#fsm.onBefore(transition, cb, signal) }
-    
+
     /**
      * Registers a listener for transition after events.
      * @param {string|string[]} transition - Transition name(s) to listen for
@@ -436,13 +436,13 @@ export class Workflow {
      * @returns {function} Cleanup function to remove the listener(s)
      */
     onAfter(transition, cb, signal) { return this.#fsm.onAfter(transition, cb, signal) }
-    
+
     /**
      * Clears all event listeners for specified events.
      * @param {string|string[]} event - Event name(s) to clear
      */
     clear(event) { this.#fsm.clear(event); }
-    
+
     /**
      * Pauses the workflow execution.
      */
@@ -450,7 +450,7 @@ export class Workflow {
         if (this.isPaused) return;
         this.#fsm.invoke("pause");
     }
-    
+
     /**
      * Resumes the workflow execution.
      */
@@ -458,25 +458,25 @@ export class Workflow {
         if (!this.isPaused) return;
         this.#fsm.invoke("resume");
     }
-    
+
     /**
      * Aborts the workflow execution.
      */
     abort() { this.#fsm.invoke("abort") }
-    
+
     /**
      * Gets a task by its ID.
      * @param {string} id - The task ID
      * @returns {Task|undefined} The task or undefined if not found
      */
     getTask(id) { return this.#dag.getVertex(id)?.payload; }
-    
+
     /**
      * Gets all tasks in topological order, sorted by priority.
      * @returns {Task[]} Array of tasks in execution order
      */
     getOrdered() { return this.#dag.topoSort((a, b) => b.payload.priority - a.payload.priority) }
-    
+
     /**
      * Removes all tasks from the workflow.
      */
@@ -561,7 +561,7 @@ export class Workflow {
                 task.cancel();
             return task.execute(settled.map(s => s.value))
         })
-        .catch(err => err); // have to keep this to prevent error from escaping control flow
+            .catch(err => err); // have to keep this to prevent error from escaping control flow
         this.#processed.set(id, p);
         return p;
     }
@@ -651,7 +651,7 @@ export class Workflow {
      */
     toJSON() {
         return {
-            id : this.id,
+            id: this.id,
             state: this.state,
             tasks: this.getOrdered().map(t => t.toJSON())
         }

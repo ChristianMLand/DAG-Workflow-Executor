@@ -61,37 +61,28 @@ export class Time {
             }
         }
         check();
-        return this.timeout(() => promise, ms).finally(() => {
+        return this.timeout(promise, ms).finally(() => {
             check = null;
         })
     }
 
     /**
-     * Executes a callback with a timeout.
-     * @param {Promise<any>} prom - Promise to timeout
-     * @param {number} [ms=5000] - Timeout in milliseconds
-     * @param {function(): void} - Callback to execute after timeout
-     * @returns {Promise<any>} The result of the callback or timeout error
+     * Races a promise against a timeout.
+     * @param {Promise<any>} promise - The promise to race.
+     * @param {number} [ms=5000] - Timeout in milliseconds.
+     * @param {function():void} [onTimeout] - Optional callback when timeout fires.
+     * @returns {Promise<any>} Resolves/rejects with the original promise, or rejects on timeout.
      */
-    static async timeout(prom, ms = 5000, onTimeout) {
+    static async timeout(promise, ms = 5000, onTimeout) {
         if (ms === Number.POSITIVE_INFINITY)
-            return prom;
-        let timer;
-        const timeoutPromise = new Promise((_, reject) => {
-            timer = setTimeout(() => {
-                if (onTimeout) onTimeout();
-                reject(new Error(`Timed out after ${ms}ms`));
-            }, ms);
-        });
-
-        try {
-            return await Promise.race([prom, timeoutPromise]);
-        } finally {
-            if (timer) 
-                clearTimeout(timer);
-        }
+            return promise;
+        const timeout = Promise.withResolvers();
+        const handle = setTimeout(() => {
+            if (onTimeout) onTimeout();
+            timeout.reject(new Error(`Timed out after ${ms}ms`));
+        }, ms);
+        return Promise.race([promise, timeout.promise]).finally(() => clearTimeout(handle));
     }
-
 
     /**
      * Delays execution of a callback by a specified amount of time.
